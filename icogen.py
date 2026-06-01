@@ -23,21 +23,66 @@ MACOS_ICON_SIZES = [
     (512,  2, "icon_512x512@2x.png"),
 ]
 
+# Apple HIG icon shape constants
+CONTENT_RATIO = 0.8        # artwork fills 80% of canvas; 10% padding each side
+CORNER_RATIO  = 0.225      # corner radius = canvas * 0.225 (Apple HIG squircle)
+
 
 def check_pillow():
     try:
-        from PIL import Image
-        return Image
+        from PIL import Image, ImageDraw
+        return Image, ImageDraw
     except ImportError:
         print("Error: Pillow is not installed.", file=sys.stderr)
         print("Install it with: pip install Pillow", file=sys.stderr)
         sys.exit(1)
 
 
-def resize_icon(src: Path, out_dir: Path, verbose: bool = False, icns: bool = False):
-    Image = check_pillow()
+def make_squircle_mask(size: int, radius: int):
+    """Return an 'L' mode mask with a rounded-rectangle at canvas size."""
+    _, ImageDraw = check_pillow()
+    from PIL import Image
+    mask = Image.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
+    return mask
 
-    # Validate source
+
+def apply_macos_shape(img, canvas_px: int):
+    Image, _ = check_pillow()
+    from PIL import ImageChops  # ImageChopsをインポート
+
+    padding   = round(canvas_px * (1 - CONTENT_RATIO) / 2)
+    art_size  = canvas_px - padding * 2
+    radius    = round(canvas_px * CORNER_RATIO)
+
+    # 1. アートワークをリサイズ
+    artwork = img.resize((art_size, art_size), Image.LANCZOS)
+
+    # 2. 完全に透明なキャンバスを作成
+    canvas = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    
+    # 3. アートワークを貼り付け（この時点ではアートワーク自体の透明度は維持される）
+    canvas.paste(artwork, (padding, padding))
+
+    # 4. 角丸マスクを作成
+    mask = make_squircle_mask(canvas_px, radius)
+
+    # 5. 【重要】現在のキャンバスのアルファチャンネルを取り出し、マスクと合成する
+    current_alpha = canvas.getchannel('A')
+    # multiply（乗算）することで、元の透明な部分はそのまま、角の部分だけがさらに削られる
+    new_alpha = ImageChops.multiply(current_alpha, mask)
+    
+    # 6. 合成したアルファチャンネルを適用
+    canvas.putalpha(new_alpha)
+
+    return canvas
+
+
+def resize_icon(src: Path, out_dir: Path, verbose: bool = False,
+                icns: bool = False, shape: bool = False):
+    Image, _ = check_pillow()
+
     if not src.exists():
         print(f"Error: Source file not found: {src}", file=sys.stderr)
         sys.exit(1)
@@ -54,7 +99,6 @@ def resize_icon(src: Path, out_dir: Path, verbose: bool = False, icns: bool = Fa
     if w < 1024 or h < 1024:
         print(f"Warning: Source image is {w}x{h}. Recommended minimum is 1024x1024.", file=sys.stderr)
 
-    # Prepare output directory (iconset folder for icns)
     if icns:
         iconset_dir = out_dir / (src.stem + ".iconset")
         iconset_dir.mkdir(parents=True, exist_ok=True)
@@ -67,16 +111,20 @@ def resize_icon(src: Path, out_dir: Path, verbose: bool = False, icns: bool = Fa
 
     for size, scale, filename in MACOS_ICON_SIZES:
         px = size * scale
-        resized = img.resize((px, px), Image.LANCZOS)
+
+        if shape:
+            final = apply_macos_shape(img, px)
+        else:
+            final = img.resize((px, px), Image.LANCZOS)
+
         out_path = target_dir / filename
-        resized.save(out_path, "PNG", optimize=True)
+        final.save(out_path, "PNG", optimize=True)
         generated.append((filename, px))
         if verbose:
             print(f"  ✓ {filename:30s} ({px}x{px}px)")
 
     print(f"\nGenerated {len(generated)} icons → {target_dir}")
 
-    # Optionally build .icns with iconutil (macOS only)
     if icns:
         import platform
         if platform.system() != "Darwin":
@@ -101,9 +149,9 @@ def main():
         epilog="""
 Examples:
   python icogen.py icon.png
-  python icogen.py icon.png -o ./MyApp.iconset
-  python icogen.py icon.png --icns
-  python icogen.py icon.png --icns -o ./output -v
+  python icogen.py icon.png --shape
+  python icogen.py icon.png --shape -o ./MyApp.iconset
+  python icogen.py icon.png --icns --shape -v
 
 Output filenames follow Apple's naming convention:
   icon_16x16.png, icon_16x16@2x.png, icon_32x32.png, ...
@@ -114,6 +162,15 @@ Output filenames follow Apple's naming convention:
         "-o", "--output",
         default=None,
         help="Output directory (default: ./icons/)",
+    )
+    parser.add_argument(
+        "--shape",
+        action="store_true",
+        help=(
+            "Apply macOS HIG icon shaping: artwork scaled to 80%% of canvas "
+            "with 10%% padding on each side and a squircle clip mask "
+            "(corner radius = 22.5%% of canvas size)"
+        ),
     )
     parser.add_argument(
         "--icns",
@@ -153,11 +210,16 @@ Output filenames follow Apple's naming convention:
     print(f"icogen — macOS App Icon Generator")
     print(f"Source : {src}")
     print(f"Output : {out_dir}")
+    mode_parts = []
+    if args.shape:
+        mode_parts.append("HIG shape (80% + squircle)")
     if args.icns:
-        print(f"Mode   : PNG + .icns")
+        mode_parts.append(".icns")
+    if mode_parts:
+        print(f"Mode   : {' + '.join(mode_parts)}")
     print()
 
-    resize_icon(src, out_dir, verbose=args.verbose, icns=args.icns)
+    resize_icon(src, out_dir, verbose=args.verbose, icns=args.icns, shape=args.shape)
 
 
 if __name__ == "__main__":
