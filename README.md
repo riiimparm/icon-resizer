@@ -26,7 +26,7 @@ uv add Pillow
 # 1. Pillow を入れる（上記参照）
 
 # 2. curl で実行（YOUR_IMAGE.png を対象ファイルに変えてください）
-  https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py \
+  curl -fsSL https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py \
   | python3 - YOUR_IMAGE.png
 ```
 
@@ -34,11 +34,11 @@ uv add Pillow
 
 ```bash
 # 出力先を指定
-  https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py \
+  curl -fsSL https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py \
   | python3 - YOUR_IMAGE.png -o ./MyApp.iconset
 
 # .icns も生成（macOS 限定）
-  https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py \
+  curl -fsSL https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py \
   | python3 - YOUR_IMAGE.png --icns -v
 ```
 
@@ -49,7 +49,7 @@ uv add Pillow
 
 ```bash
 # ダウンロード
-https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py -o icogen.py
+curl -fsSL https://raw.githubusercontent.com/riiimparm/icon-resizer/refs/heads/main/icogen.py -o icogen.py
 
 # 実行権限を付けてどこからでも呼べるようにする（オプション）
 chmod +x icogen.py
